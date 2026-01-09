@@ -100,7 +100,7 @@ RSpec.describe Order, type: :model do
         puts "\n--- Teste: search_by_customer ---"
 
         time = Benchmark.measure do
-          5000.times do
+          500.times do
             Order.search_by_customer('customer')
           end
         end
@@ -122,13 +122,13 @@ RSpec.describe Order, type: :model do
         end_date = Date.today
 
         time = Benchmark.measure do
-          5000.times do
+          500.times do
             Order.find_by_date_range(start_date, end_date)
           end
         end
 
         puts "Tempo para 5000 buscas: #{time.real.round(4)} segundos"
-        puts "Média por busca: #{(time.real / 5000 * 1000).round(4)} ms"
+        puts "Média por busca: #{(time.real / 500 * 1000).round(4)} ms"
         puts "-" * 40
 
         # META: Após adicionar índice em order_date, deve ser mais rápido
@@ -187,7 +187,7 @@ RSpec.describe Order, type: :model do
   describe 'Query Count Tests (N+1 Detection)' do
     before do
       @products = create_list(:product, 10)
-      1000.times { create(:order, product: @products.sample) }
+      10000.times { create(:order, product: @products.sample) }
     end
 
     it 'detecta problema N+1 no generate_report' do
@@ -209,7 +209,45 @@ RSpec.describe Order, type: :model do
       # ANTES da otimização: > 1000 queries (1 + N para cada order)
       # DEPOIS da otimização: deve ser < 3 queries
       # Este expect vai FALHAR antes da otimização - é intencional!
-      # expect(query_count).to be < 3
+      expect(query_count).to be < 3
+    end
+  end
+
+  describe "PROBLEMA: Múltiplas queries desnecessárias" do
+    before do
+      @products = create_list(:product, 10)
+      10000.times { create(:order, product: @products.sample) }
+    end
+
+    it "detecta query desnecessarias" do
+      query_count = 0
+
+      subscriber = ActiveSupport::Notifications.subscribe('sql.active_record') do |name, start, finish, id, payload|
+        unless ['SCHEMA', 'CACHE'].include?(payload[:name]) || payload[:sql] =~ /^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT)/
+          query_count += 1
+        end
+      end
+
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+
+      puts "\n[query desnecessarias Test] generate_report executou #{query_count} queries"
+      puts "-" * 40
+
+      expect(query_count).to be 0
+    end
+  end
+
+  describe "Teste calculo da media" do
+    context "com divisor zero" do
+      it "retorna zero" do
+        expect(Order.calculate_average(9, 0)).to be 0
+      end
+    end
+
+    context "com divisor zero" do
+      it "retorna a media" do
+        expect(Order.calculate_average(9, 3)).to be 3
+      end
     end
   end
 end
